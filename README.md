@@ -49,3 +49,15 @@ func main() {
 The logger is asynchronus so it will not log all items unless either
 `siglog.Flush()` is manually called, or `siglog.Shutdown()` is called in the
 application shutdown process.
+
+Logs are output as the following:
+
+```
+HH-MM-SS-XX: [Caller][Level] - Entry.
+```
+
+For example:
+
+```
+16-14-49-00: [SYSTEM][WARN] - I want to log this warning.
+```
