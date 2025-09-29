@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -98,10 +99,13 @@ type logEntry struct {
 // logger writes to a dated log file.
 // Use logging.GlobalLogger instead of making a new one.
 type logger struct {
-	file   *os.File
-	in     chan *logEntry
+	file *os.File
+	in   chan *logEntry
+
 	date   string
 	writer *bufio.Writer
+
+	wg sync.WaitGroup
 }
 
 func newLogger() *logger {
@@ -149,6 +153,7 @@ func (l *logger) loop() {
 
 	for entry := range l.in {
 		if entry == nil {
+			l.wg.Done()
 			continue
 		}
 
@@ -170,6 +175,8 @@ func (l *logger) loop() {
 		if getToday() != l.date {
 			l.rotate()
 		}
+
+		l.wg.Done()
 	}
 }
 
@@ -237,7 +244,7 @@ func (l *logger) writeToFile(e *logEntry) {
 	}
 }
 
-// -------Global Singleton Logger-----------------------------------------------
+// -------Primary Exported Functions--------------------------------------------
 
 // The global logger handles logs concurrently, so there is no need for more
 // than one.
@@ -255,5 +262,22 @@ func LogEntry(entry, caller string, level LogLevel) {
 		entry:  entry,
 		level:  level,
 	}
+
+	globalLogger.wg.Add(1)
 	globalLogger.in <- ml
+}
+
+// Flush blocks until all currently enqueued log entries are processed.
+func Flush() {
+	globalLogger.wg.Wait()
+}
+
+// Shutdown flushes all logs, closes the input channel, and waits for the
+// logger goroutine to exit cleanly.
+func Shutdown() {
+	// Ensure everything enqueued so far is processed.
+	Flush()
+
+	// Closing 'in' lets the loop's 'range' exit.
+	close(globalLogger.in)
 }

@@ -38,7 +38,12 @@ func main() {
     siglog.SetLogLevel(siglog.LL_WARN)
     siglog.SetOutput(siglog.OUT_STDOUT)
 
-    entry := "I want to log this warning."
-    siglog.LogEntry(entry, "main", siglog.LL_WARN)
+    siglog.LogEntry("I want to log this warning.", "SYSTEM", siglog.LL_WARN)
+    siglog.LogEntry("I want to log this error.", "SYSTEM", siglog.LL_ERROR)
+    siglog.LogEntry("This should not show up.", "SYSTEM", siglog.LL_INFO)
+
+    siglog.Shutdown()
 }
 ```
+
+you can also call `siglog.Flush()` at any time to manually flush the logger.
