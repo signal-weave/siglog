@@ -46,4 +46,6 @@ func main() {
 }
 ```
 
-you can also call `siglog.Flush()` at any time to manually flush the logger.
+The logger is asynchronus so it will not log all items unless either
+`siglog.Flush()` is manually called, or `siglog.Shutdown()` is called in the
+application shutdown process.
