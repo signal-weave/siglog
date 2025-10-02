@@ -39,6 +39,11 @@ There are three supported batching methods:
 
 Where `BATCH_NONE` disables batching and resumes individual writes.
 
+You can edit batch values with the following:
+`siglog.SetMaxItems()`
+`siglog.SetMaxBytes()`
+`siglog.SetMaxWait()`
+
 ### Example
 
 ```go

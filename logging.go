@@ -335,5 +335,6 @@ func Shutdown() {
 	close(globalLogger.in)
 }
 
-func SetMaxItems(n int) { globalLogger.maxItems = n }
-func SetMaxBytes(n int) { globalLogger.maxBytes = n }
+func SetMaxItems(n int)          { globalLogger.maxItems = n }
+func SetMaxBytes(n int)          { globalLogger.maxBytes = n }
+func SetMaxWait(d time.Duration) { globalLogger.maxWait = d }
