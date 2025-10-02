@@ -31,7 +31,7 @@ func captureWriter(target **os.File, fn func()) string {
 }
 
 // restore default formatter after tests that change it.
-func resetFormatter(t *testing.T) {
+func resetFormatter() {
 	SetLogFormatter(defaultFormatByLevel)
 }
 
@@ -42,7 +42,7 @@ func TestLogEntry_Stdout_DefaultFormatter(t *testing.T) {
 		SetBatchMode(BATCH_NONE)
 		SetOutput(OUT_STDOUT)
 		SetLogLevel(LL_NONE)
-		resetFormatter(t)
+		resetFormatter()
 	})
 
 	// Ensure messages at/above level are emitted.
@@ -103,7 +103,7 @@ func TestLogEntry_File_Output(t *testing.T) {
 
 func TestSetLogFormatter_Custom(t *testing.T) {
 	t.Cleanup(func() {
-		resetFormatter(t)
+		resetFormatter()
 		SetBatchMode(BATCH_NONE)
 		SetOutput(OUT_STDOUT)
 		SetLogLevel(LL_DEBUG)
