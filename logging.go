@@ -282,6 +282,19 @@ func (l *logger) appendToTimer(e *logEntry) {
 		msg = COULD_NOT_WRITE_ENTRY
 	}
 	l.batchBuf = append(l.batchBuf, msg)
+
+	if l.maxWait > 0 {
+		// Drain the channel if needed to avoid spurious wakeups.
+		if !l.timer.Stop() {
+			select {
+			case <-l.timer.C:
+			default:
+			}
+		}
+
+		l.wg.Add(1)
+		l.timer.Reset(l.maxWait)
+	}
 }
 
 // -------Primary Exported Functions--------------------------------------------
@@ -328,6 +341,13 @@ func Flush() {
 // Shutdown flushes all logs, closes the input channel, and waits for the
 // logger goroutine to exit cleanly.
 func Shutdown() {
+	// If there’s a time/item/byte batch sitting in memory, flush it now.
+	if len(globalLogger.batchBuf) > 0 {
+		out := strings.Join(globalLogger.batchBuf, "")
+		globalLogger.writeToOut(out)
+		globalLogger.batchBuf = []string{}
+	}
+
 	// Ensure everything enqueued so far is processed.
 	Flush()
 
