@@ -71,13 +71,13 @@ func getTodaysLogFilePath() string {
 
 // Returns a formatted entry based on the current logging level environment var.
 func defaultFormatByLevel(le Entry) (string, error) {
-	if len(le.entry) == 0 || le.entry[len(le.entry)-1] != '\n' {
-		le.entry += "\n"
+	if len(le.Entry) == 0 || le.Entry[len(le.Entry)-1] != '\n' {
+		le.Entry += "\n"
 	}
 
 	now := time.Now().Format(TimeLayout)
 	tok := levelName[GetLogLevel()]
-	out := fmt.Sprintf("%s: [%s][%s] - %s", now, le.caller, tok, le.entry)
+	out := fmt.Sprintf("%s: [%s][%s] - %s", now, le.Caller, tok, le.Entry)
 
 	return out, nil
 }
@@ -116,14 +116,14 @@ func formatByLevel(le Entry) (string, error) {
 type Entry struct {
 	// What "source" the log message is coming from.
 	// This should be a file, struct, stream, etc.
-	caller string
+	Caller string
 
 	// The message to log.
-	entry string
+	Entry string
 
-	// What logging level is required in the environment for the log to be
+	// What logging Level is required in the environment for the log to be
 	// written.
-	level LogLevel
+	Level LogLevel
 }
 
 // logger writes to a dated log file.
@@ -214,7 +214,7 @@ func (l *logger) loop() {
 				continue
 			}
 
-			if entry.level <= GetLogLevel() {
+			if entry.Level <= GetLogLevel() {
 				msg, err := formatByLevel(*entry)
 				if err != nil {
 					msg = COULD_NOT_WRITE_ENTRY
@@ -340,9 +340,9 @@ func LogEntry(entry, caller string, level LogLevel) {
 	}
 
 	le := &Entry{
-		caller: caller,
-		entry:  entry,
-		level:  level,
+		Caller: caller,
+		Entry:  entry,
+		Level:  level,
 	}
 
 	switch GetBatchMode() {
