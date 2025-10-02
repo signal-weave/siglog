@@ -30,12 +30,26 @@ The log files are dated and written to a specified directory using
 By default the logging level is set to `LL_NONE`, the output is set to
 `OUT_STDOUT`, and the output directory is blank.
 
+There are three supported batching methods:
+
+* `BATCH_NONE`
+* `BATCH_ITEM`
+* `BATCH_BYTE`
+* `BATCH_TIEM`
+
+Where `BATCH_NONE` disables batching and resumes individual writes.
+
 ### Example
 
 ```go
 func main() {
     siglog.SetLogDirectory("some/directory")
+
     siglog.SetLogLevel(siglog.LL_WARN)
+
+    siglog.SetBatchMode(siglog.BATCH_ITEM)
+    siglog.SetMaxItems(128)
+
     siglog.SetOutput(siglog.OUT_STDOUT)
 
     siglog.LogEntry("I want to log this warning.", "SYSTEM", siglog.LL_WARN)

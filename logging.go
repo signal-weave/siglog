@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -69,14 +70,14 @@ func getTodaysLogFilePath() string {
 }
 
 // Returns a formatted entry based on the current logging level environment var.
-func formatByLevel(lm logEntry) (string, error) {
-	if len(lm.entry) == 0 || lm.entry[len(lm.entry)-1] != '\n' {
-		lm.entry += "\n"
+func formatByLevel(le logEntry) (string, error) {
+	if len(le.entry) == 0 || le.entry[len(le.entry)-1] != '\n' {
+		le.entry += "\n"
 	}
 
 	now := time.Now().Format(TimeLayout)
 	tok := levelName[GetLogLevel()]
-	out := fmt.Sprintf("%s: [%s][%s] - %s", now, lm.caller, tok, lm.entry)
+	out := fmt.Sprintf("%s: [%s][%s] - %s", now, le.caller, tok, le.entry)
 
 	return out, nil
 }
@@ -101,9 +102,16 @@ type logEntry struct {
 type logger struct {
 	file *os.File
 	in   chan *logEntry
+	date string
 
-	date   string
 	writer *bufio.Writer
+
+	// Batching
+	maxItems int
+	maxBytes int
+	batchBuf []string
+	maxWait  time.Duration
+	timer    *time.Timer
 
 	wg sync.WaitGroup
 }
@@ -117,10 +125,20 @@ func newLogger() *logger {
 	}
 
 	l := &logger{
-		file:   file,
-		date:   getToday(),
-		in:     make(chan *logEntry, 1024),
+		file: file,
+		date: getToday(),
+		in:   make(chan *logEntry, 1024),
+
 		writer: bufio.NewWriter(file),
+
+		maxItems: 128,
+		maxBytes: 512,
+		maxWait:  250 * time.Millisecond,
+		batchBuf: []string{},
+	}
+	l.timer = time.NewTimer(l.maxWait)
+	if !l.timer.Stop() {
+		<-l.timer.C
 	}
 	l.start()
 
@@ -151,97 +169,119 @@ func (l *logger) loop() {
 		_ = l.file.Close()
 	}()
 
-	for entry := range l.in {
-		if entry == nil {
-			l.wg.Done()
-			continue
-		}
+	for {
+		select {
 
-		if GetLogLevel() == LL_NONE {
-			continue
-		}
-
-		if entry.level <= GetLogLevel() {
-			switch GetOutput() {
-			case OUT_STDOUT:
-				l.writeToStdOut(entry)
-			case OUT_STDERR:
-				l.writeToStdErr(entry)
-			case OUT_FILE:
-				l.writeToFile(entry)
+		case entry, ok := <-l.in:
+			if !ok {
+				return
 			}
+			if entry == nil {
+				l.wg.Done()
+				continue
+			}
+
+			if GetLogLevel() == LL_NONE {
+				continue
+			}
+
+			if entry.level <= GetLogLevel() {
+				msg, err := formatByLevel(*entry)
+				if err != nil {
+					msg = COULD_NOT_WRITE_ENTRY
+				}
+				l.writeToOut(msg)
+			}
+
+			if getToday() != l.date {
+				l.rotate()
+			}
+
+			l.wg.Done()
+
+		case <-l.timer.C:
+			out := strings.Join(l.batchBuf, "")
+			l.writeToOut(out)
+			l.batchBuf = []string{}
+
+			if l.maxWait > 0 {
+				l.timer.Reset(l.maxWait)
+			}
+
+			l.wg.Done()
 		}
+	}
+}
 
-		if getToday() != l.date {
-			l.rotate()
+func (l *logger) writeToOut(out string) {
+	switch GetOutput() {
+
+	case OUT_STDOUT:
+		w := bufio.NewWriter(os.Stdout)
+		w.WriteString(out)
+		w.Flush()
+
+	case OUT_STDERR:
+		w := bufio.NewWriter(os.Stderr)
+		w.WriteString(out)
+		w.Flush()
+
+	case OUT_FILE:
+		if l.file == nil {
+			fmt.Fprintln(os.Stderr, "Could not open log file for writing.")
+			return
+		} else {
+			l.writer.WriteString(out)
+			l.writer.Flush()
 		}
-
-		l.wg.Done()
 	}
 }
 
-func (l *logger) writeToStdOut(e *logEntry) {
-	writer := bufio.NewWriter(os.Stdout)
-	flush := func() {
-		_ = writer.Flush()
-	}
-	defer flush()
+// -------Batching--------------------------------------------------------------
 
-	var msg string
+func (l *logger) appendItemToBatch(e *logEntry) bool {
 	msg, err := formatByLevel(*e)
 	if err != nil {
 		msg = COULD_NOT_WRITE_ENTRY
 	}
+	l.batchBuf = append(l.batchBuf, msg)
 
-	_, err = writer.WriteString(msg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, COULD_NOT_WRITE_ENTRY)
+	if !(l.maxItems > 0 && len(l.batchBuf) >= l.maxItems) {
+		return false
 	}
+
+	out := strings.Join(l.batchBuf, "")
+	l.writeToOut(out)
+	l.batchBuf = []string{}
+
+	return true
 }
 
-func (l *logger) writeToStdErr(e *logEntry) {
-	writer := bufio.NewWriter(os.Stderr)
-	flush := func() {
-		_ = writer.Flush()
-	}
-	defer flush()
-
-	var msg string
+func (l *logger) appendBytesToBatch(e *logEntry) bool {
 	msg, err := formatByLevel(*e)
 	if err != nil {
 		msg = COULD_NOT_WRITE_ENTRY
 	}
+	l.batchBuf = append(l.batchBuf, msg)
 
-	_, err = writer.WriteString(msg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, COULD_NOT_WRITE_ENTRY)
+	out := strings.Join(l.batchBuf, "")
+
+	if !(l.maxBytes > 0 && len(out) >= l.maxBytes) {
+		return false
 	}
+
+	l.writeToOut(out)
+	l.batchBuf = []string{}
+
+	return true
 }
 
-func (l *logger) writeToFile(e *logEntry) {
-	var msg string
-
-	if l.file == nil {
-		msg = "Could not open log file for writing."
-		fmt.Fprintln(os.Stderr, msg)
-		return
-	}
-
-	writer := bufio.NewWriter(l.file)
-	flush := func() {
-		_ = writer.Flush()
-	}
-	defer flush()
-
+func (l *logger) appendToTimer(e *logEntry) {
 	msg, err := formatByLevel(*e)
 	if err != nil {
 		msg = COULD_NOT_WRITE_ENTRY
 	}
-
-	_, err = writer.WriteString(msg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, COULD_NOT_WRITE_ENTRY)
-	}
+	l.batchBuf = append(l.batchBuf, msg)
 }
 
 // -------Primary Exported Functions--------------------------------------------
@@ -257,14 +297,27 @@ func LogEntry(entry, caller string, level LogLevel) {
 		return
 	}
 
-	ml := &logEntry{
+	le := &logEntry{
 		caller: caller,
 		entry:  entry,
 		level:  level,
 	}
 
-	globalLogger.wg.Add(1)
-	globalLogger.in <- ml
+	switch GetBatchMode() {
+
+	case BATCH_ITEM:
+		globalLogger.appendItemToBatch(le)
+
+	case BATCH_BYTE:
+		globalLogger.appendBytesToBatch(le)
+
+	case BATCH_TIME:
+		globalLogger.appendToTimer(le)
+
+	default:
+		globalLogger.wg.Add(1)
+		globalLogger.in <- le
+	}
 }
 
 // Flush blocks until all currently enqueued log entries are processed.
@@ -281,3 +334,6 @@ func Shutdown() {
 	// Closing 'in' lets the loop's 'range' exit.
 	close(globalLogger.in)
 }
+
+func SetMaxItems(n int) { globalLogger.maxItems = n }
+func SetMaxBytes(n int) { globalLogger.maxBytes = n }
