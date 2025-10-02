@@ -70,7 +70,7 @@ func getTodaysLogFilePath() string {
 }
 
 // Returns a formatted entry based on the current logging level environment var.
-func formatByLevel(le logEntry) (string, error) {
+func defaultFormatByLevel(le Entry) (string, error) {
 	if len(le.entry) == 0 || le.entry[len(le.entry)-1] != '\n' {
 		le.entry += "\n"
 	}
@@ -82,9 +82,38 @@ func formatByLevel(le logEntry) (string, error) {
 	return out, nil
 }
 
+// A function type that takes an Entry struct and formats the values to create
+// the log entry that will be written to the configured output.
+type LogFormatter func(Entry) (string, error)
+
+var (
+	fmtMu         sync.RWMutex
+	formatterFunc LogFormatter = defaultFormatByLevel
+)
+
+// SetLogFormatter replaces the global fallback formatter used.
+// f is the function that will be called to format log Entry structs into the
+// string entry that is written to the configured output.
+func SetLogFormatter(f LogFormatter) {
+	if f == nil {
+		return
+	}
+	fmtMu.Lock()
+	formatterFunc = f
+	fmtMu.Unlock()
+}
+
+// formatByLevel calls the configured LogFormatter that will convert an Entry
+// struct into the string message that will be written to the configured output.
+//
+// This is a wrapper to separate the configured function with the actual calls.
+func formatByLevel(le Entry) (string, error) {
+	return formatterFunc(le)
+}
+
 // -------Logger----------------------------------------------------------------
 
-type logEntry struct {
+type Entry struct {
 	// What "source" the log message is coming from.
 	// This should be a file, struct, stream, etc.
 	caller string
@@ -101,7 +130,7 @@ type logEntry struct {
 // Use logging.GlobalLogger instead of making a new one.
 type logger struct {
 	file *os.File
-	in   chan *logEntry
+	in   chan *Entry
 	date string
 
 	writer *bufio.Writer
@@ -127,7 +156,7 @@ func newLogger() *logger {
 	l := &logger{
 		file: file,
 		date: getToday(),
-		in:   make(chan *logEntry, 1024),
+		in:   make(chan *Entry, 1024),
 
 		writer: bufio.NewWriter(file),
 
@@ -239,7 +268,7 @@ func (l *logger) writeToOut(out string) {
 
 // -------Batching--------------------------------------------------------------
 
-func (l *logger) appendItemToBatch(e *logEntry) bool {
+func (l *logger) appendItemToBatch(e *Entry) bool {
 	msg, err := formatByLevel(*e)
 	if err != nil {
 		msg = COULD_NOT_WRITE_ENTRY
@@ -257,7 +286,7 @@ func (l *logger) appendItemToBatch(e *logEntry) bool {
 	return true
 }
 
-func (l *logger) appendBytesToBatch(e *logEntry) bool {
+func (l *logger) appendBytesToBatch(e *Entry) bool {
 	msg, err := formatByLevel(*e)
 	if err != nil {
 		msg = COULD_NOT_WRITE_ENTRY
@@ -276,7 +305,7 @@ func (l *logger) appendBytesToBatch(e *logEntry) bool {
 	return true
 }
 
-func (l *logger) appendToTimer(e *logEntry) {
+func (l *logger) appendToTimer(e *Entry) {
 	msg, err := formatByLevel(*e)
 	if err != nil {
 		msg = COULD_NOT_WRITE_ENTRY
@@ -310,7 +339,7 @@ func LogEntry(entry, caller string, level LogLevel) {
 		return
 	}
 
-	le := &logEntry{
+	le := &Entry{
 		caller: caller,
 		entry:  entry,
 		level:  level,
