@@ -54,7 +54,7 @@ func main() {
     siglog.SetLogLevel(siglog.LL_WARN)
 
     siglog.SetBatchMode(siglog.BATCH_ITEM)
-    siglog.SetMaxItems(128)
+    siglog.SetMaxItems(3)
 
     siglog.SetOutput(siglog.OUT_STDOUT)
 
