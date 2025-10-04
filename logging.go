@@ -345,6 +345,10 @@ func LogEntry(entry, caller string, level LogLevel) {
 		Level:  level,
 	}
 
+	if le.Level > GetLogLevel() {
+		return
+	}
+
 	switch GetBatchMode() {
 
 	case BATCH_ITEM:
