@@ -153,11 +153,13 @@ func TestBatchItem_FlushOnCount(t *testing.T) {
 	SetMaxItems(2)
 
 	got := captureWriter(&os.Stdout, func() {
-		// Item batching writes immediately when threshold is met; no Flush needed.
+		// Item batching writes immediately when threshold is met; no Flush
+		// needed.
 		LogEntry("one", "SYSTEM", LL_DEBUG)
 		LogEntry("two", "SYSTEM", LL_DEBUG)
 		// Give buffered writer a nudge by an extra newline write to stdout.
-		// (Not strictly necessary; the bufio.NewWriter(Stdout).Flush() is called in writeToOut.)
+		// (Not strictly necessary; the bufio.NewWriter(Stdout).Flush() is
+		// called in writeToOut.)
 	})
 
 	// Expect two formatted lines, joined.
@@ -202,5 +204,53 @@ func TestBatchTime_FiresAfterWaitAndFlushes(t *testing.T) {
 
 	if !strings.Contains(got, "[SYSTEM][DEBUG] - tick\n") {
 		t.Fatalf("expected time-batch flush, got:\n%s", got)
+	}
+}
+
+func TestLogEntry_RespectsLogLevel(t *testing.T) {
+	// Ensure logger writes to STDOUT for this test.
+	if err := SetOutput(OUT_STDOUT); err != nil {
+		t.Fatalf("failed to set output: %v", err)
+	}
+	if err := SetBatchMode(BATCH_NONE); err != nil {
+		t.Fatalf("failed to set batch mode: %v", err)
+	}
+	if err := SetLogLevel(LL_INFO); err != nil {
+		t.Fatalf("failed to set log level: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = SetLogLevel(LL_NONE)
+		_ = SetBatchMode(BATCH_NONE)
+		_ = SetOutput(OUT_STDOUT)
+	})
+
+	// Case 1: Entry below current level (DEBUG when level is INFO) -> expect
+	// NO output.
+	outBelow := captureWriter(&os.Stdout, func() {
+		LogEntry("debug-msg-below", "test-caller", LL_DEBUG)
+		Flush()
+	})
+	if got := strings.TrimSpace(outBelow); got != "" {
+		t.Fatalf("expected no output for below-level entry; got: %q", got)
+	}
+
+	// Case 2: Entry at current level (INFO when level is INFO) -> expect
+	// output.
+	outAt := captureWriter(&os.Stdout, func() {
+		LogEntry("info-msg-at", "test-caller", LL_INFO)
+		Flush()
+	})
+	if !strings.Contains(outAt, "info-msg-at") {
+		t.Fatalf("expected output for at-level entry; got: %q", outAt)
+	}
+
+	// Case 3: Entry above severity (ERROR more severe than INFO) ->expect
+	// output.
+	outAbove := captureWriter(&os.Stdout, func() {
+		LogEntry("error-msg-above", "test-caller", LL_ERROR)
+		Flush()
+	})
+	if !strings.Contains(outAbove, "error-msg-above") {
+		t.Fatalf("expected output for higher-severity entry; got: %q", outAbove)
 	}
 }
