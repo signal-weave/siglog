@@ -1,8 +1,9 @@
 # SigLog
 Signal Weave Logging
 
-This module is the standardized logging methodology and formatting used by all
-Signal Weave applications.
+SigLog is a leveled logger with redirectable outputs and batching for use in
+Signal Weave applications. It serves to standardize logging methodology and
+formatting across SW applications.
 
 ## Usage
 
